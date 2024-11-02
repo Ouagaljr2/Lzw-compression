@@ -1,0 +1,460 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <math.h>
+
+#include "trie.h"
+
+/**
+ * Remove char from string at the given index
+ */
+void remove_char(char *word, size_t index) {
+    memmove(&word[index],&word[index+1],strlen(word)-index);
+}
+
+unsigned long hex2dec(char* hex) {
+    return strtoul(hex, NULL, 16);
+}
+
+char *dec2hex(unsigned decimal, char* hex, unsigned size) {
+    char *tmp = (char *) malloc((size) * sizeof(char));
+
+    if (hex == NULL) {
+        // size + 1 to take into account the '\0' string code
+        hex= (char *) malloc((size + 1) * sizeof(char));
+        hex[size] = '\0';
+    }
+    
+    long quotient, remainder;
+    int hex_size = 0;
+    quotient = decimal;
+ 
+    while (quotient != 0) {
+        remainder = quotient % 16;
+        if (remainder < 10) {
+            tmp[hex_size] = 48 + remainder;
+        }
+        else {
+            tmp[hex_size] = 55 + remainder;
+        }
+        hex_size++;
+        quotient = quotient / 16;
+    }
+
+    // nb of zero to output
+    int zero_left = size - hex_size;
+
+    // write hex value to the end
+    while(hex_size >= 0) {
+        hex_size--;
+        hex[size - hex_size - 1] = tmp[hex_size];
+        
+    }
+
+    // complete hex with 0
+    while (zero_left > 0) {
+        hex[zero_left - 1] = '0';
+        zero_left--;
+    }
+
+    free(tmp);
+
+    return hex;
+}
+
+/**
+ * Read next bytes of file stream as a short (most of the time 2 bytes on modern system)
+ * and write it in a file
+ */
+char* rb_next_short_as_hex(FILE *fp) {
+    unsigned short input;
+    if(fread(&input, sizeof(unsigned short), 1, fp) == 0) {
+        return NULL;
+    }
+    else {
+        return dec2hex(input, NULL, 5);
+    }
+}
+
+/**
+ *  Convert hex string to short (most of the time 2 bytes on modern system)
+ *  and write it in a file 
+ */
+bool wb_hex_as_short(FILE *fp, char* hex) {
+    unsigned short bin = (unsigned short) hex2dec(hex);
+    // true if fwrite wrote one elt, false otherwise
+    return fwrite(&bin, sizeof(unsigned int), 1, fp) == 1;
+}
+
+/**
+ *  Convert hex string to int (most of the time 4 bytes on modern system)
+ *  and write it in a file 
+ */
+bool wb_hex_as_int(FILE *fp, char* hex) {
+    unsigned int bin = (unsigned int) hex2dec(hex);
+    // true if fwrite wrote one elt, false otherwise
+    return fwrite(&bin, sizeof(unsigned int), 1, fp) == 1;
+}
+
+/**
+ * Read next bytes of file stream as a int (most of the time 4 bytes on modern system)
+ * and write it in a file
+ */
+char* rb_next_int_as_hex(FILE *fp) {
+    unsigned int input;
+    if(fread(&input, sizeof(unsigned int), 1, fp) == 0) {
+        return NULL;
+    }
+    else {
+        return dec2hex(input, NULL, sizeof(short));
+    }
+}
+
+/**
+ *  Convert hex string to long (most of the time 8 bytes on modern system)
+ *  and write it in a file 
+ */
+bool wb_hex_as_long(FILE *fp, char* hex) {
+    unsigned long bin = (unsigned long) hex2dec(hex);
+    // true if fwrite wrote one elt, false otherwise
+    return fwrite(&bin, sizeof(unsigned long), 1, fp) == 1;
+}
+
+/**
+ * Read next bytes of file stream as a long (most of the time 8 bytes on modern system)
+ * and write it in a file
+ */
+char* rb_next_long_as_hex(FILE *fp) {
+    unsigned long input;
+    if(fread(&input, sizeof(unsigned long), 1, fp) == 0) {
+        return NULL;
+    }
+    else {
+        return dec2hex(input, NULL, 8);
+    }
+}
+
+char* concat(const char *s1, const char *s2) {
+    char *result = malloc(strlen(s1) + strlen(s2) + 1); // +1 for the null-terminator
+    // in production-ready code you would check for errors in malloc here
+    strcpy(result, s1);
+    strcat(result, s2);
+    return result;
+}
+
+char* char2str(const char c) {
+    char *str = malloc(2 * sizeof(char));
+    str[0] = c;
+    str[1] = '\0';
+
+    return str;
+}
+
+int useShort_liste= 0;
+int useInt_liste= 0;
+int useLong_liste= 0;
+
+void taille_dico( int *s, int *i, int *l, char *fichier ){
+
+    struct stat statbuf;
+
+    if ( stat( fichier, &statbuf ) == 1){
+        perror( "" );
+        exit( EXIT_FAILURE );
+    }
+
+    int size = statbuf.st_size;
+    long unsigned st = 0xFF + size;
+
+    
+
+    if ( ( st ) < ( pow( 0xF, 1 ) * (2 - 1) )  * ( 0xF + 1 ) ){
+        printf("Use short\n");
+        *s = true;
+    }
+
+    else if ( ( st ) < ( pow( 0xF, 3 ) * (4 - 1) )  * ( 0xF + 1 ) ){
+        printf("Use int\n");
+        *i = true;
+    }
+
+    else if ( ( st ) < ( pow( 0xF, 7 ) * (8 - 1) )  * ( 0xF + 1 ) ){
+        printf("Use long\n");
+        *l = true;
+    }
+
+    else{
+        printf("Impossible to compress the input file\n");
+        exit( EXIT_FAILURE );
+    }
+
+}
+
+
+
+int main(int argc,char * argv[]  ) {
+
+    
+    Trie t = createTrie(); 
+    t=init(t);
+    /*printf("ici\n");
+    printf("%s\n",valueOfKey(t,"L"));
+
+
+    
+    /*t = insertTrie( t, "Bdm", 1 );
+    t = insertTrie( t, "ACA", 2 );
+    t = insertTrie( t, "abakar", 10);
+
+    
+    printf("%s\n", t->fils['B']->fils['d']->fils['m']->value);
+    printf("%s\n", t->fils['A']->fils['C']->fils['A']->value);
+    Trie tmp;
+    tmp=descendre(t,'A');
+    printf("%s\n",tmp->c);
+    printf("%s\n",valueOfKey(t,"abakar"));*/
+
+
+
+    FILE *f=NULL;
+    FILE *out= NULL;
+    FILE *decomp= NULL;
+
+    f = fopen(argv[1], "r");
+    out = fopen(argv[2], "wb+");
+    //decomp = fopen(argv[3], "w");
+
+    newCompressLZW(t,f,out,argv[1]);
+    
+
+
+
+    return 0;
+}
+
+
+Trie createTrie( ) {
+
+    return NULL;
+
+}
+
+Trie init(Trie t){
+
+    t = (Trie ) malloc(sizeof(strTrie));
+
+    t->fils=calloc( 256, sizeof( strTrie));
+
+    for (int i = 0; i < 256; i++){
+
+        t->fils[i]=malloc(sizeof(strTrie));
+        t->fils[i]->c=char2str(i);
+
+        t->fils[i]->value=dec2hex(i,NULL,sizeof(short));
+
+    }
+
+    return t;
+}
+
+
+
+Trie initTrie( Trie t, Trie papa, char *c, char *s, int i, bool last, int j, int hex ) {
+    char* val=dec2hex( hex, NULL, sizeof( short ) );
+    
+    if( !i ) {
+        Trie tr = ( Trie ) malloc( sizeof( strTrie ));
+        tr->papa = papa;
+        tr->c = s; 
+        tr->fils = calloc( 256, sizeof( strTrie ) );
+        if( last ) 
+            tr->value = val;
+        else 
+            tr->value = "0";
+
+        tr->isWord = last;
+            
+        return tr;
+
+    }
+
+    
+
+    return initTrie( (t->fils[(int) s[ j+1 ]  ]), t, c, s, i-1, last, j+1, hex );
+
+
+}
+
+void freeListe( Trie t ) {
+
+    free( t->fils );
+
+    free( t ); 
+
+    return;
+
+}
+
+Trie insertTrie( Trie t, char *s, int hex ) {
+    
+    if( t == NULL ){
+        t = malloc( sizeof(strTrie));
+        t->fils = calloc( 256, sizeof( strTrie ) );
+        t->papa = NULL;
+    }
+
+    Trie tr = t;
+    Trie tr_tmp = t;
+    Trie tr_t = t;
+    char *str = "";
+
+    for ( int i = 0; i < (int) strlen( s ); i++ ){
+        int b = (i == (int)(strlen(s) - 1));
+
+        str = concat( str, char2str( s[i] ) );
+        
+        tr = initTrie( t, t->papa, str, str, i+1, b, -1, hex );    
+
+        for ( int j = 0; j < i; j++ ){
+
+            t = t->fils[(int) s[j]];
+
+        }
+
+        t->fils[(int) s[i]] = tr;
+
+        for ( int j = 0; j < i; j++ ){
+
+            t = t->papa;
+
+        }
+        
+    }
+    
+    return t;
+}
+
+
+bool rechercheRec(Trie t, char *caract, int i ){
+    if (caract[i]=='\0') return true;
+    
+    if(t==NULL) {
+        return false;
+    }
+    else if( i == (int) (strlen(caract) - 1)){
+        return t->isWord;
+    }
+    
+    i++;
+    return rechercheRec(t->fils[(int) caract[i]],caract,i);
+
+
+}
+
+bool recherche( Trie t, char * caractere){
+    
+    return rechercheRec(t,caractere,0);
+}
+
+
+
+Trie descendre(Trie t,char i){
+    Trie tmp;
+    tmp=t->fils[i];
+    return tmp;
+
+}
+
+char * valueOfKey(Trie tr,char* key){
+
+    int keylen=strlen(key);
+    Trie tmp=tr;
+
+    for (int i = 0; i < keylen; i++){
+        tmp=descendre(tmp,key[i]);
+
+    }
+    return tmp->value;
+   
+}
+
+
+void newCompressLZW(Trie tr, FILE *stream, FILE *output, char *filename) {
+
+    taille_dico( &useShort_liste, &useInt_liste, &useLong_liste, filename );
+
+    tr = createTrie();
+    tr=init(tr);
+
+    char strP[2048];
+    char strC[2048];
+
+    fgets( strP, 2, stream );
+
+    int i = 257;
+
+
+    while( fgets( strC, 2, stream ) != NULL) {
+
+        if( recherche(tr, concat( strP, strC ) ) ){
+
+            strcpy( strP, concat( strP, strC ) );
+
+        }else{
+
+            if( useShort_liste ){
+                    
+
+                char *hex = dec2hex( i, NULL, sizeof( unsigned short ) );
+
+
+                wb_hex_as_short( output, valueOfKey( tr, strP ) );
+
+
+                free( hex );
+
+            }
+            else if ( useInt_liste ){
+
+
+                char *hex = dec2hex( i, NULL, sizeof( unsigned int ) );
+
+
+                wb_hex_as_int( output, valueOfKey( tr, strP ) );
+
+
+                free( hex );
+
+            }
+            else if ( useLong_liste ){
+
+
+                char *hex = dec2hex( i, NULL, sizeof( unsigned long ) );
+
+
+                wb_hex_as_long( output, valueOfKey( tr, strP ) );
+
+
+                free( hex );
+            }
+
+
+
+            tr = insertTrie( tr, concat( strP, strC ), i );
+
+            strcpy( strP, strC );
+            i++;
+
+        } 
+
+    } 
+
+    wb_hex_as_long( output, valueOfKey( tr, strP ) );
+
+}
+
+    
